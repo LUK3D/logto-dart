@@ -56,6 +56,65 @@ void main() {
     expect(client.currentSession?.accessToken, 'fresh-access');
   });
 
+  test('refresh preserves path-prefixed auth base URLs', () async {
+    final storage = MockStorageStrategy();
+    await EventusSessionStorage(storage).save(
+      _authResult(accessToken: 'expired-access', expiresAt: _past()),
+    );
+    final client = EventusAuthClient(
+      config: const EventusAuthConfig(
+        authBaseUrl: 'https://gateway.eventus.test/mobile-auth',
+        googleIosClientId: 'ios-client',
+        googleServerClientId: 'server-client',
+      ),
+      storageProvider: storage,
+      httpClient: MockClient((request) async {
+        expect(
+          request.url.toString(),
+          'https://gateway.eventus.test/mobile-auth/api/auth/session/refresh',
+        );
+        return http.Response(
+          jsonEncode(_refreshResponse(accessToken: 'fresh-access')),
+          200,
+        );
+      }),
+    );
+
+    final accessToken = await client.getValidAccessToken();
+
+    expect(accessToken, 'fresh-access');
+  });
+
+  test('signInWithEmailPassword exchanges credentials for a session', () async {
+    final storage = MockStorageStrategy();
+    final client = EventusAuthClient(
+      config: config,
+      storageProvider: storage,
+      httpClient: MockClient((request) async {
+        expect(request.url.path, '/api/auth/email-password');
+        expect(
+          jsonDecode(request.body),
+          {'email': 'user@example.com', 'password': 'secret'},
+        );
+        return http.Response(
+          jsonEncode(_emailPasswordResponse(accessToken: 'email-access')),
+          200,
+        );
+      }),
+    );
+
+    final result = await client.signInWithEmailPassword(
+      email: ' user@example.com ',
+      password: 'secret',
+    );
+
+    expect(result.session.accessToken, 'email-access');
+    expect(
+      (await EventusSessionStorage(storage).load())?.session.accessToken,
+      'email-access',
+    );
+  });
+
   test('clears the stored session when refresh is rejected', () async {
     final storage = MockStorageStrategy();
     await EventusSessionStorage(storage).save(
@@ -178,6 +237,16 @@ Map<String, dynamic> _refreshResponse({required String accessToken}) => {
       'session': {
         'accessToken': accessToken,
         'refreshToken': 'new-refresh-token',
+        'tokenType': 'Bearer',
+        'expiresIn': 900,
+      },
+    };
+
+Map<String, dynamic> _emailPasswordResponse({required String accessToken}) => {
+      'user': _userJson(),
+      'session': {
+        'accessToken': accessToken,
+        'refreshToken': 'email-refresh-token',
         'tokenType': 'Bearer',
         'expiresIn': 900,
       },

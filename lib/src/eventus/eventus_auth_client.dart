@@ -49,6 +49,22 @@ class EventusAuthClient {
     return _currentAuthResult;
   }
 
+  /// Signs in with an email and password handled by Eventus auth.
+  Future<EventusAuthResult> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _httpClient.post(
+      _uri('/api/auth/email-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': email.trim(),
+        'password': password,
+      }),
+    );
+    return _saveAuthResult(EventusAuthResult.fromJson(_decode(response)));
+  }
+
   /// Signs in with native Google and exchanges the provider ID token.
   Future<EventusAuthResult> signInWithGoogle() async {
     final googleSignIn = GoogleSignIn(
@@ -228,8 +244,12 @@ class EventusAuthClient {
 
   Uri _uri(String path) {
     final base = Uri.parse(config.authBaseUrl);
+    final basePath = base.path.endsWith('/')
+        ? base.path.substring(0, base.path.length - 1)
+        : base.path;
     final normalizedPath = path.startsWith('/') ? path : '/$path';
-    return base.replace(path: normalizedPath);
+    final prefix = basePath == '/' ? '' : basePath;
+    return base.replace(path: '$prefix$normalizedPath');
   }
 
   Map<String, dynamic> _decode(http.Response response) {
